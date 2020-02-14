@@ -5,15 +5,15 @@ const VIEWED_TIME_THRESHOLD = 1000 * 60 // 1時間 (これ以上経過してい�
 window.addEventListener("load", main, false);
 
 function main(e) {
-  addCounter()
+  addScrollCounter()
 };
 
 // 検索画面下に件数出す部分の用意
-function addCounter() {
+function addScrollCounter() {
   $('div[class^="SearchForm__InputBase"]').append("<div style='text-align: right; padding-right: 27px; margin-top: 7px;'><p id='viewed-count'></p></div>")
 }
 
-function displayTime(timestamp) {
+function timestampToString(timestamp) {
   if (!timestamp) {
     return ''
   }
@@ -33,29 +33,25 @@ function getViewedUserKey(userID) {
   return 'vw-' + userID
 }
 
-
 function saveTimeStamp(key, newerTime, olderTIme) {
+  console.log("saveTimeStamp")
   var storeObj = {}
   storeObj[key] = [newerTime, olderTIme]
   chrome.storage.local.set(storeObj)
-
 }
 
 function storeLastViewed(userID) {
   // 最新の閲覧日時をみて、それが VIEWED_TIME_THRESHOLD 以上経っている場合のみ保存する
   // 最も新しいもの2つを保存する (なぜなら、今見ている時間を保存する必要がありつつ、表示には前回のものを使うため)
   const viewedKey = getViewedUserKey(userID)
-  const now = new Date().getTime()
   chrome.storage.local.get([viewedKey], function (result) {
+    const now = new Date().getTime()
     if (result[viewedKey] !== undefined) {
       const latestTimestamp = result[viewedKey][0]
-
       if ((now - latestTimestamp) > VIEWED_TIME_THRESHOLD){
-        console.log('save: update')
         saveTimeStamp(viewedKey, now, latestTimestamp)
       }
     } else {
-      console.log('save: now')
       saveTimeStamp(viewedKey, now, null)
     }
   })
@@ -63,14 +59,13 @@ function storeLastViewed(userID) {
 
 function showLastViewed(card, userID) {
   // 前回閲覧した時間を取得
-  // 1時間以上前に見た記録に限って取得する
-  const now = new Date()
-  const key = getViewedUserKey(userID)
-  chrome.storage.local.get([key], function (result) {
-    if (result[key] !== undefined) {
-      console.log("showLastViewed")
-      const last = result[key][0]
-      const last2 = result[key][1]
+  // VIEWED_TIME_THRESHOLD 以上前に見た記録に限って取得する
+  const viewedKey = getViewedUserKey(userID)
+  chrome.storage.local.get([viewedKey], function (result) {
+    if (result[viewedKey] !== undefined) {
+      const last = result[viewedKey][0]
+      const last2 = result[viewedKey][1]
+      const now = new Date()
       if ((now - last) > VIEWED_TIME_THRESHOLD){
         appendLastViewed(card, last)
       } else {
@@ -81,7 +76,7 @@ function showLastViewed(card, userID) {
 }
 
 function appendLastViewed(parentElm, timestamp) {
-  const text = displayTime(timestamp)
+  const text = timestampToString(timestamp)
   const lastViewedParentElm = $(parentElm).find('div[class^="UserListItemTypeCard__ScoutButtonContainer"]')
   const isExist = $(lastViewedParentElm).find('span.LastViewed')
   if ($(isExist).length === 0 && text !== '') {
@@ -93,40 +88,55 @@ function appendLastViewed(parentElm, timestamp) {
 }
 
 // 最初の要素は値がズレがちでIDとして扱うとバグるので、最初の5つ(<4000)は固定でいれる
-var cardsList = [740, 740 * 2, 740 * 3, 740 * 4, 740 * 5]
-
-$(window).scroll(function(){
-  var cards = $('div[class="ReactVirtualized__Grid__innerScrollContainer"]').children()
-  $(cards).each(function(i, card){
-    const cardTop = $(card).css('top')
-    const cardID = Number(cardTop.slice(0, -2))
-    if (cardID > 4000 && !cardsList.includes(cardID)) {
-      const lastID = cardsList[cardsList.length - 1]
-      // 値がズレやすい部分の対応
-      if (cardID > lastID) {
-        cardsList.push(cardID);
-      }
+var cardList = [740, 740 * 2, 740 * 3, 740 * 4, 740 * 5]
+function updateCardList(card) {
+  const cardTop = $(card).css('top')
+  const cardID = Number(cardTop.slice(0, -2))
+  if (cardID > 4000 && !cardList.includes(cardID)) {
+    const lastID = cardList[cardList.length - 1]
+    // 値がズレやすい部分の対応
+    if (cardID > lastID) {
+      cardList.push(cardID);
     }
-    // カードのIDに `UserListItem-18411406` が入っているのでUserIDだけ抜き出す
-    const userID = $(card).children('div').first().attr('id').slice(13, -1)
-    showLastViewed(card, userID)
-    storeLastViewed(userID)
-  })
+  }
+}
 
-  var denom = $('p[class^="UserListContainer__HeadingNumberLabel"]').text()
+function getUserIDByCard(card) {
+  return $(card).children('div').first().attr('id').slice(13, -1)
+}
+
+function getScrolledCount(_cardList) {
   const YOffset = window.pageYOffset
   // カードの座標と比較するため
   const scrollValue = YOffset + 560
 
-  var cardsScrolled = 0
-  cardsList.forEach(function(top, i) {
+  var scrolledCount = 0
+  _cardList.forEach(function(top, i) {
     if (scrollValue > top) {
-      cardsScrolled = i + 1
+      scrolledCount = i + 1
       return false
     }
   })
+  return scrolledCount
+}
+
+
+$(window).scroll(function(){
+  const cards = $('div[class="ReactVirtualized__Grid__innerScrollContainer"]').children()
+  $(cards).each(function(i, card){
+    updateCardList(card)
+
+    // カードのIDに `UserListItem-18411406` が入っているのでUserIDだけ抜き出す
+    const userID = getUserIDByCard(card)
+    showLastViewed(card, userID)
+    storeLastViewed(userID)
+  })
+
+  // スクロール人数の更新
+  const denom = $('p[class^="UserListContainer__HeadingNumberLabel"]').text()
+  const scrolledCount = getScrolledCount(cardList)
   if (!($('p#viewed-count').length)) {
-    addCounter()
+    addScrollCounter()
   }
-  $('p#viewed-count').text(cardsScrolled + '/' + denom)
+  $('p#viewed-count').text(scrolledCount + '/' + denom)
 })

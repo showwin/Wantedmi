@@ -1,8 +1,8 @@
 {
-  "name": "__MSG_appName__",
-  "version": "0.0.1",
+  "name": "Wantedmi",
+  "version": "0.0.2",
   "manifest_version": 2,
-  "description": "__MSG_appDescription__",
+  "description": "wantedly.com のスカウト機能をより便利にするChrome拡張機能です",
   "icons": {
     "16": "images/icon-16.png",
     "128": "images/icon-128.png"
@@ -16,7 +16,6 @@
     ]
   },
   "permissions": [
-    "tabs",
     "storage",
     "http://*/*",
     "https://*/*"
